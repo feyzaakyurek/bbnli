@@ -27,15 +27,29 @@ if __name__ == "__main__":
     #     for job in inp['MJOB_list']:
         pre = env.from_string(pre).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
         for test_hyp,test_hyp_l in inp['test_hypothesis']:
-            test_hyp = env.from_string(test_hyp).render(MJOB="software_engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise"+str(ind), pre, "test", test_hyp, test_hyp_l, -1, inp['reference'][ind]]
+            test_hyp = env.from_string(test_hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
+            df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "test", test_hyp, test_hyp_l, -1, inp['reference'][ind]]
         for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
             hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise"+str(ind), pre, "stereotypical", hyp, label, bias_label, inp['reference'][ind]]
-        for hyp, label, bias_label in inp['bias_hypothesis_anti-stereotypical']:
-            hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise"+str(ind), pre, "anti-stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+            df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+#         for hyp, label, bias_label in inp['bias_hypothesis_anti-stereotypical']:
+#             hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
+#             df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "anti-stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+            
+        pre = env.from_string(pre).render(MJOB="software engineering", GROUP1=group2, GROUP2=group1)
+        for test_hyp,test_hyp_l in inp['test_hypothesis']:
+            test_hyp = env.from_string(test_hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
+            df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "test", test_hyp, test_hyp_l, -1, inp['reference'][ind]]
+            
+        for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
+            hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group2, GROUP2=group1)
+            df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+#         for hyp, label, bias_label in inp['bias_hypothesis_anti-stereotypical']:
+#             hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
+#             df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "anti-stereotypical", hyp, label, bias_label, inp['reference'][ind]]
             
     head, tail = os.path.split(filename)
     pth = os.path.join(head, tail.replace("json", "csv"))
-    df.to_csv(pth)
+    df = df.reset_index()
+    df.columns = ["Index"] + df.columns[1:].tolist()
+    df.to_csv(pth, index=False)
