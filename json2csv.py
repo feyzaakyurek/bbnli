@@ -3,19 +3,36 @@ import pandas as pd
 from jinja2.nativetypes import NativeEnvironment
 import os
 import sys
+import itertools
+from collections import OrderedDict
+from tqdm import tqdm
 
 if __name__ == "__main__":
-    filename = sys.argv[1] #"data/nli/gender/man_is_to_programmer.json"
-    print(filename)
+    filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
+
+    # Exit if file exists.
+    head, tail = os.path.split(filename)
+    save_pth = os.path.join(head, tail.replace("json", "csv"))
+    if os.path.exists(save_pth):
+        print(f"{save_pth} already exits.")
+        exit(0)
+
+    # Read the json file.
+    print(f"Reading {filename}.")
     with open(filename, "r") as f:
         inp = json.load(f)
     env = NativeEnvironment()
     
+    # Populate a csv with all possible (premise, hypothesis) combinations.
     group1 = inp["GROUP1"][0]
     group2 = inp["GROUP2"][0]
+    data = OrderedDict(inp['data'])
     name = inp["name"].replace(" ", "_")
     df = pd.DataFrame(columns=["domain",
-                               "premise_id",
+                               "name",
+                               "id",
+                               "type",
+                               "unique_id",
                                "premise",
                                "hypothesis_type",
                                "hypothesis",
@@ -23,33 +40,88 @@ if __name__ == "__main__":
                                "bias_label",
                                "reference"
                                ])
-    for ind,pre in enumerate(inp['premise']):
-    #     for job in inp['MJOB_list']:
-        pre = env.from_string(pre).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-        for test_hyp,test_hyp_l in inp['test_hypothesis']:
-            test_hyp = env.from_string(test_hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "test", test_hyp, test_hyp_l, -1, inp['reference'][ind]]
-        for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
-            hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "stereotypical", hyp, label, bias_label, inp['reference'][ind]]
-#         for hyp, label, bias_label in inp['bias_hypothesis_anti-stereotypical']:
-#             hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-#             df.loc[len(df)] = [inp['domain'],name+"_premise_pro"+f"{ind:02}", pre, "anti-stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+    
+    # Pairwise cross product data
+    variables = list(itertools.product(*list(data.values())))
+    keys = list(data.keys())
+    
+    print("Iterating over premises...")
+    for ind,pre in enumerate(tqdm(inp['premise'])):
+        for datum in variables:
+            m = dict(zip(keys, datum))
+            m["GROUP1"] = group1
+            m["GROUP2"] = group2
             
-        pre = env.from_string(pre).render(MJOB="software engineering", GROUP1=group2, GROUP2=group1)
-        for test_hyp,test_hyp_l in inp['test_hypothesis']:
-            test_hyp = env.from_string(test_hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-            df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "test", test_hyp, test_hyp_l, -1, inp['reference'][ind]]
+            # Replace variables in premise.
+            pre_pro = env.from_string(pre).render(**m)
             
-        for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
-            hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group2, GROUP2=group1)
-            df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "stereotypical", hyp, label, bias_label, inp['reference'][ind]]
-#         for hyp, label, bias_label in inp['bias_hypothesis_anti-stereotypical']:
-#             hyp = env.from_string(hyp).render(MJOB="software engineering", GROUP1=group1, GROUP2=group2)
-#             df.loc[len(df)] = [inp['domain'],name+"_premise_anti"+f"{ind:02}", pre, "anti-stereotypical", hyp, label, bias_label, inp['reference'][ind]]
+            for test_hyp,test_hyp_l in inp['test_hypothesis']:
+                # Replace variables in hypothesis.
+                test_hyp = env.from_string(test_hyp).render(**m)
+                df.loc[len(df)] = [inp['domain'],
+                                   name,
+                                   f"{ind:02}",
+                                   "pro",
+                                   name+"_pro_"+f"{ind:02}",
+                                   pre_pro,
+                                   "test",
+                                   test_hyp,
+                                   test_hyp_l,
+                                   -1,
+                                   inp['reference'][ind]]
+                
+            for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
+                # Replace variables in hypothesis.
+                hyp = env.from_string(hyp).render(**m)
+                df.loc[len(df)] = [inp['domain'],
+                                   name,
+                                   f"{ind:02}",
+                                   "pro",
+                                   name+"_pro_"+f"{ind:02}",
+                                   pre_pro,
+                                   "stereotypical",
+                                   hyp,
+                                   label,
+                                   bias_label,
+                                   inp['reference'][ind]]
+                
+            # Now anti-stereotypical formulation where group1 and group2 are swapped
+            # in both premises and hypotheses.
+            m["GROUP1"] = group2
+            m["GROUP2"] = group1
             
-    head, tail = os.path.split(filename)
-    pth = os.path.join(head, tail.replace("json", "csv"))
+            pre_anti = env.from_string(pre).render(**m)
+
+            for test_hyp,test_hyp_l in inp['test_hypothesis']:
+                # Replace variables in hypothesis.
+                test_hyp = env.from_string(test_hyp).render(**m)
+                df.loc[len(df)] = [inp['domain'],
+                                   name,
+                                   f"{ind:02}",
+                                   "anti",
+                                   name+"_anti_"+f"{ind:02}",
+                                   pre_anti,
+                                   "test",
+                                   test_hyp,
+                                   test_hyp_l,
+                                   -1,
+                                   inp['reference'][ind]]
+                
+            for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
+                # Replace variables in hypothesis.
+                hyp = env.from_string(hyp).render(**m)
+                df.loc[len(df)] = [inp['domain'],
+                                   name,
+                                   f"{ind:02}",
+                                   "anti",
+                                   name+"_anti_"+f"{ind:02}",
+                                   pre_anti,
+                                   "anti-stereotypical",
+                                   hyp,
+                                   label,
+                                   bias_label,
+                                   inp['reference'][ind]]
+    df = df.drop_duplicates()
     df = df.reset_index()
     df.columns = ["Index"] + df.columns[1:].tolist()
-    df.to_csv(pth, index=False)
+    df.to_csv(save_pth, index=False)

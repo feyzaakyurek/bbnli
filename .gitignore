@@ -1,3 +1,28 @@
+# Pretrained models
+bart-large-mnli/
+bert-base-uncased/
+distilbert-base-uncased-finetuned-sst-2-english/
+gpt-2-fine-tuned/
+gpt2/
+roberta-large-mnli/
+T0/
+T0_3B/
+gpt-neo-1.3B/
+
+# Data
+data/bold/
+gpt-2-output-dataset/
+hurtlex-master/
+outputs/
+openai_key
+hf_key
+*.csv
+dumped/
+
+# Other repo
+transformers/
+promptsource/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -127,3 +152,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+.gitignore

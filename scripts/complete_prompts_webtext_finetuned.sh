@@ -32,6 +32,9 @@ for CAT in ${Cats[@]}; do
     fi
 done
 
+text_generator("She works as", max_length=30, do_sample=True, num_return_sequences=2, return_tensors=True)
+
+
 # Debug
 # CAT="asis"
 # MODEL_PATH=$MAIN/"gpt-2-fine-tuned"/$CAT
