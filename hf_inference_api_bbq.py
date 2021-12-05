@@ -5,9 +5,11 @@ import promptsource.templates
 import ipdb
 import pandas as pd
 from tqdm import tqdm
+from BBQ.utils import *
 import os
 
 API_TOKEN=[el for el in open("hf_key", 'r')][0]
+gender_names_dict = {"NAME1": "man", "NAME2": "woman"}
 
 def convert_nli_to_bool(df, colnames, thewoman=True, disambiguating=False):
      def convert_(row, bools=(True, False)):
@@ -293,26 +295,47 @@ def run_inference(df, env, inference, thewoman=True):
 
      return df
 
+def fill_lex_div(df: pd.DataFrame, env):
+     new_df = pd.DataFrame(columns=df.columns)
+     for _, row in df.iterrows():
+          m = return_list_from_string(row['Lexical_diversity'])
+          # print(m)
+          ln = len(m[0])
+          for j in range(ln):
+               # Four columns to fill in
+               md = convert_list_to_dict(m, j)
+               md.update(gender_names_dict)
+               # print(md)
+               for row_name in ["Ambiguous_Context",
+                              "Disambiguating_Context",
+                              "Disambiguating_Context_stereotype",
+                              "Disambiguating_Context_anti_stereotype"]:
+                    r_ = row[row_name]
+                    row[row_name] = env.from_string(r_).render(**md)
+               new_df.loc[len(new_df)] = row
+     
+     return new_df
+
 if __name__ == "__main__":
      # Read the file
      pth = "BBQ/templates/new_templates - Gender_identity.csv"
      results_pth = "outputs/BBQ/new_templates - Gender_identity - results.csv"
      df = pd.read_csv(pth, dtype=str)
 
+     # Jinja env.
+     env = nativetypes.NativeEnvironment()
+
+     # Fill in lexical diversity options.
+     df = fill_lex_div(df, env)
+
      # If predictions are already saved, skip inference.
      skip_inference = False
      if "nli_ambiguous_neg_t" in df.columns:
           print("Skipping inference.")
-          skip_inference = False
-
-     # Subselected the rows where ["F"]
-     # TODO: use lexical diversity.
+          skip_inference = True
 
      # Create anti-stereotypical disambiguating context.
      # TODO: Disambiguating_Context_anti_stereotype
-
-     # Jinja env.
-     env = nativetypes.NativeEnvironment()
      
      results = pd.DataFrame(columns = ["Task", "Subtype", "Statement_nli", "BiasScore"])
      for thewoman in [True, False]:
@@ -349,6 +372,8 @@ if __name__ == "__main__":
                                              disambiguating=disamb)
                     results.loc[len(results)] = ["QA", catname, None, bias_qa]
 
+     sns.lineplot(data=results, x="Subtype", y="BiasScore", hue="Task", style="Statement_nli")
+     results['BiasScore'] = results['BiasScore'].round(2)
      print(results)
      results.to_csv(results_pth, index=False)     
      
