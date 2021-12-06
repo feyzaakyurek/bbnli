@@ -6,6 +6,7 @@ import sys
 import itertools
 from collections import OrderedDict
 from tqdm import tqdm
+import ipdb
 
 if __name__ == "__main__":
     filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
@@ -36,6 +37,7 @@ if __name__ == "__main__":
                                "premise",
                                "hypothesis_type",
                                "hypothesis",
+                               "question",
                                "true_label",
                                "bias_label",
                                "reference"
@@ -55,9 +57,14 @@ if __name__ == "__main__":
             # Replace variables in premise.
             pre_pro = env.from_string(pre).render(**m)
             
-            for test_hyp,test_hyp_l in inp['test_hypothesis']:
+            for ti, (test_hyp,test_hyp_l) in enumerate(inp['test_hypothesis']):
+
                 # Replace variables in hypothesis.
                 test_hyp = env.from_string(test_hyp).render(**m)
+                # Replace variables in question.
+                qq, _ = inp['test_question'][ti]
+                qq = env.from_string(qq).render(**m)
+
                 df.loc[len(df)] = [inp['domain'],
                                    name,
                                    f"{ind:02}",
@@ -66,13 +73,18 @@ if __name__ == "__main__":
                                    pre_pro,
                                    "test",
                                    test_hyp,
+                                   qq,
                                    test_hyp_l,
                                    -1,
                                    inp['reference'][ind]]
                 
-            for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
+            for ti,(hyp, label, bias_label) in enumerate(inp['bias_hypothesis_stereotypical']):
                 # Replace variables in hypothesis.
                 hyp = env.from_string(hyp).render(**m)
+                # Replace variables in question.
+                qq, *_ = inp['bias_question_stereotypical'][ti]
+                qq = env.from_string(qq).render(**m)
+
                 df.loc[len(df)] = [inp['domain'],
                                    name,
                                    f"{ind:02}",
@@ -81,6 +93,7 @@ if __name__ == "__main__":
                                    pre_pro,
                                    "stereotypical",
                                    hyp,
+                                   qq,
                                    label,
                                    bias_label,
                                    inp['reference'][ind]]
@@ -92,9 +105,13 @@ if __name__ == "__main__":
             
             pre_anti = env.from_string(pre).render(**m)
 
-            for test_hyp,test_hyp_l in inp['test_hypothesis']:
+            for ti, (test_hyp,test_hyp_l) in enumerate(inp['test_hypothesis']):
                 # Replace variables in hypothesis.
                 test_hyp = env.from_string(test_hyp).render(**m)
+                # Replace variables in question.
+                qq, *_ = inp['test_question'][ti]
+                qq = env.from_string(qq).render(**m)
+
                 df.loc[len(df)] = [inp['domain'],
                                    name,
                                    f"{ind:02}",
@@ -103,13 +120,17 @@ if __name__ == "__main__":
                                    pre_anti,
                                    "test",
                                    test_hyp,
+                                   qq,
                                    test_hyp_l,
                                    -1,
                                    inp['reference'][ind]]
                 
-            for hyp, label, bias_label in inp['bias_hypothesis_stereotypical']:
+            for ti, (hyp, label, bias_label) in enumerate(inp['bias_hypothesis_stereotypical']):
                 # Replace variables in hypothesis.
                 hyp = env.from_string(hyp).render(**m)
+                # Replace variables in question.
+                qq, *_ = inp['bias_question_stereotypical'][ti]
+                qq = env.from_string(qq).render(**m)
                 df.loc[len(df)] = [inp['domain'],
                                    name,
                                    f"{ind:02}",
@@ -118,6 +139,7 @@ if __name__ == "__main__":
                                    pre_anti,
                                    "anti-stereotypical",
                                    hyp,
+                                   qq,
                                    label,
                                    bias_label,
                                    inp['reference'][ind]]
