@@ -1,4 +1,3 @@
-from io import StringIO
 from huggingface_hub.inference_api import InferenceApi
 from jinja2 import nativetypes
 import promptsource.templates
@@ -6,23 +5,39 @@ import ipdb
 import pandas as pd
 from tqdm import tqdm
 from BBQ.utils import *
-import os
+import seaborn as sns
+import argparse
+import numpy as np
+import logging
+import matplotlib.pyplot as plt
 
+NUM_GENS=5
 API_TOKEN=[el for el in open("hf_key", 'r')][0]
 gender_names_dict = {"NAME1": "man", "NAME2": "woman"}
+NLI_TEMPLATES=[#"can we infer",
+               "GPT-3 style",
+               # "consider always/sometimes/never",
+               "does this imply",
+               "MNLI crowdsource"]
+QA_TEMPLATES=["Read And Extract ",
+              "Given Context Answer Question",
+              "Answer Question Given Context"] 
+
+FORMAT = '%(asctime)s %(clientip)-15s %(user)-8s %(message)s'
+logging.basicConfig(format=FORMAT)           
 
 def convert_nli_to_bool(df, colnames, thewoman=True, disambiguating=False):
      def convert_(row, bools=(True, False)):
           neg_col, pos_col = colnames
           neg_, pos_ = (None, None)
-          if "true" in row[neg_col].lower():
+          if any(el in row[neg_col].lower().split(" ") for el in ["true", "correct", "yes"]):
                neg_ = bools[0]
-          elif "false" in row[neg_col].lower():
+          elif any(el in row[neg_col].lower().split(" ") for el in ["false", "incorrect", "no"]):
                neg_ = bools[1]
 
-          if "false" in row[pos_col].lower():
+          if any(el in row[pos_col].lower().split(" ") for el in ["false", "incorrect", "no"]):
                pos_ = bools[0]
-          elif "true" in row[pos_col].lower():
+          elif any(el in row[pos_col].lower().split(" ") for el in ["true", "correct", "yes"]):
                pos_ = bools[1]
 
           return [neg_, pos_]
@@ -83,217 +98,267 @@ def convert_qa_to_bool(df, colnames, disambiguating=False):
           return bias_score * (1 - acc)
      return bias_score
 
-def run_inference(df, env, inference, thewoman=True):
+def run_inference(df, env, inference):
+     # Create new df
+     assert len(QA_TEMPLATES) == len(NLI_TEMPLATES)
+     factor = NUM_GENS * len(QA_TEMPLATES)
+     newdf = pd.concat([df]*factor).sort_index().reset_index(drop=True)
+     newdf["NLI Template"] = np.repeat(NLI_TEMPLATES, (len(df) * NUM_GENS))
+     newdf["QA Template"] = np.repeat(QA_TEMPLATES, (len(df) * NUM_GENS))
+
      # Loads templates and iterates over each premise
      template_collection = promptsource.templates.TemplateCollection()
-     s = "Answer Question Given Context"
-     nli_gpt3_style = template_collection.get_dataset("anli", None)["GPT-3 style"]
-     qa_given_con = template_collection.get_dataset("quoref", None)[s]
-     nli_inp_only = nli_gpt3_style.jinja.split(" |||")[0]
-     qa_inp_only = qa_given_con.jinja.split(" |||")[0]
 
-     nli1_neg, nli1_pos, qa1_neg, qa1_pos = [[] for i in range(4)]
-     nli2_neg, nli2_pos, qa2_neg, qa2_pos = [[] for i in range(4)]
-     nli3_neg, nli3_pos, qa3_neg, qa3_pos = [[] for i in range(4)]
-     nli4_neg, nli4_pos, qa4_neg, qa4_pos = [[] for i in range(4)]
-     nli5_neg, nli5_pos, qa5_neg, qa5_pos = [[] for i in range(4)]
+     # NLI
+     for thewoman in [True, False]:
+          # Create lists to accummulate predictions.
+          nli1_neg, nli1_pos = [], []
+          nli2_neg, nli2_pos = [], []
+          nli3_neg, nli3_pos = [], []
+          nli4_neg, nli4_pos = [], []
+          nli5_neg, nli5_pos = [], []
 
-     for ind, row in tqdm(df.iterrows(), total=len(df)):
+          # For different NLI prompts, we collect predictions.
+          for nli_temp in NLI_TEMPLATES:
+               logging.info(f"NLI: running for thewoman={thewoman} and prompt {nli_temp}.")
+               temp = template_collection.get_dataset("anli", None)[nli_temp]
+               temp = temp.jinja.split(" |||")[0]
 
-          names_dict = {"NAME1": "man", "NAME2": "woman"}
-          row['Ambiguous_Context'] = env.from_string(row['Ambiguous_Context']).render(**names_dict)
+               # Iterate over BBQ templates
+               for _, row in tqdm(df.iterrows(), total=len(df)):
 
-          if thewoman:
-               stn = "Statement_negative"
-               stp = "Statement_non_negative"
-          else:
-               stn = "Statement_negative_m"
-               stp = "Statement_non_negative_m"
+                    # Select the correct statements, thewoman
+                    # starts with "The woman ..."
+                    if thewoman:
+                         stn = "Statement_negative"
+                         stp = "Statement_non_negative"
+                    else:
+                         stn = "Statement_negative_m"
+                         stp = "Statement_non_negative_m"
 
-          # 1. NLI: Premise = Ambiguous_Context
-          # Hypothesis = Statement_negative
-          m = {"premise": row["Ambiguous_Context"],
-               "hypothesis": row[stn]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli1_neg.append(ans)
+                    # 1. NLI: Premise = Ambiguous_Context
+                    # Hypothesis = Statement_negative
+                    m = {"premise": row["Ambiguous_Context"],
+                         "hypothesis": row[stn]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli1_neg.append(ans)
 
-          # 1. NLI: Premise = Ambiguous_Context
-          # Hypothesis = Statement_non_negative
-          m = {"premise": row["Ambiguous_Context"],
-               "hypothesis": row[stp]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli1_pos.append(ans)
+                    # 1. NLI: Premise = Ambiguous_Context
+                    # Hypothesis = Statement_non_negative
+                    m = {"premise": row["Ambiguous_Context"],
+                         "hypothesis": row[stp]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli1_pos.append(ans)
 
-          # 1. QA: Context = Ambiguous_Context
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"],
-               "question": row['Question_negative_stereotype']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa1_neg.append(ans)  
+                    # 2. NLI: Premise = Ambiguous_Context + Context_append_short
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"][:-1]+ row["Context_append_short"],
+                         "hypothesis": row[stn]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli2_neg.append(ans)
 
-          # 1. QA: Context = Ambiguous_Context
-          # Question = Question_non_negative
-          m = {"context": row["Ambiguous_Context"],
-               "question": row['Question_non_negative']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa1_pos.append(ans) 
+                    # 2. NLI: Premise = Ambiguous_Context + Context_append_short
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
+                         "hypothesis": row[stp]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli2_pos.append(ans)
 
-          # 2. NLI: Premise = Ambiguous_Context + Context_append_short
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"][:-1]+ row["Context_append_short"],
-               "hypothesis": row[stn]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli2_neg.append(ans)
+                    # 3. NLI: Premise = Ambiguous_Context + Context_append_long
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"][:-1] + row["Context_append_short"] + " " + row["Context_append_long"],
+                         "hypothesis": row[stn]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli3_neg.append(ans)
 
-          # 2. NLI: Premise = Ambiguous_Context + Context_append_short
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
-               "hypothesis": row[stp]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli2_pos.append(ans)
+                    # 3. NLI: Premise = Ambiguous_Context + Context_append_long
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"][:-1] + row["Context_append_short"] + " " + row["Context_append_long"],
+                         "hypothesis": row[stp]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli3_pos.append(ans)
 
-          # 2. QA: Context = Ambiguous_Context + Context_append_short
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
-               "question": row['Question_negative_stereotype']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa2_neg.append(ans)  
+                    # 4. NLI: Premise = Ambiguous_Context + Disambiguating_Context
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
+                         "hypothesis": row[stn]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli4_neg.append(ans)
 
-          # 2. QA: Context = Ambiguous_Context + Context_append_short
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
-               "question": row['Question_non_negative']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa2_pos.append(ans)  
+                    # 4. NLI: Premise = Ambiguous_Context + Disambiguating_Context
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
+                         "hypothesis": row[stp]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli4_pos.append(ans)
 
-          # 3. NLI: Premise = Ambiguous_Context + Context_append_long
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Context_append_long"],
-               "hypothesis": row[stn]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli3_neg.append(ans)
+                    # 5. NLI: Premise = Ambiguous_Context + Disambiguating_Context
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
+                         "hypothesis": row[stn]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli5_neg.append(ans)
 
-          # 3. NLI: Premise = Ambiguous_Context + Context_append_long
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Context_append_long"],
-               "hypothesis": row[stp]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli3_pos.append(ans)
+                    # 5. NLI: Premise = Ambiguous_Context + Disambiguating_Context
+                    # Hypothesis = Statement_negative_m
+                    m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
+                         "hypothesis": row[stp]}
+                    inp = env.from_string(temp).render(**m)
+                    for i in range(NUM_GENS):
+                         ans = inference(inputs=inp)[0]['generated_text']
+                         nli5_pos.append(ans)
 
-          # 3. QA: Context = Ambiguous_Context + Context_append_long
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Context_append_long"],
-               "question": row['Question_negative_stereotype']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa3_neg.append(ans)  
+          suffix = "_t" if thewoman else "_nt"
+          newdf['nli_ambiguous_neg'+suffix] = nli1_neg
+          newdf['nli_ambiguous_pos'+suffix] = nli1_pos
+          newdf['nli_short_neg'+suffix] = nli2_neg
+          newdf['nli_short_pos'+suffix] = nli2_pos
+          newdf['nli_long_neg'+suffix] = nli3_neg
+          newdf['nli_long_pos'+suffix] = nli3_pos
+          newdf['nli_disambiguating_pro_neg'+suffix] = nli5_neg
+          newdf['nli_disambiguating_pro_pos'+suffix] = nli5_pos
+          newdf['nli_disambiguating_anti_neg'+suffix] = nli4_neg
+          newdf['nli_disambiguating_anti_pos'+suffix] = nli4_pos
 
-          # 3. QA: Context = Ambiguous_Context + Context_append_long
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Context_append_long"],
-               "question": row['Question_non_negative']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa3_pos.append(ans)
+     # QA
+     qa1_neg, qa1_pos = [], []
+     qa2_neg, qa2_pos = [], []
+     qa3_neg, qa3_pos = [], []
+     qa4_neg, qa4_pos = [], []
+     qa5_neg, qa5_pos = [], []
 
-          # 4. NLI: Premise = Ambiguous_Context + Disambiguating_Context
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
-               "hypothesis": row[stn]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli4_neg.append(ans)
+     # For different QA prompts, we collect predictions.
+     for qa_temp in QA_TEMPLATES:
+          logging.info(f"QA: running for prompt {qa_temp}.")
+          temp = template_collection.get_dataset("quoref", None)[qa_temp]
+          temp = temp.jinja.split(" |||")[0]
 
-          # 4. NLI: Premise = Ambiguous_Context + Disambiguating_Context
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
-               "hypothesis": row[stp]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli4_pos.append(ans)
+          # Iterate over BBQ templates
+          for _, row in tqdm(df.iterrows(), total=len(df)):
+               names_dict = {"NAME1": "man", "NAME2": "woman"}
+               filled_con = env.from_string(row['Ambiguous_Context']).render(**names_dict)
+               row['Ambiguous_Context'] = filled_con
 
-          # 4. QA: Context = Ambiguous_Context + Disambiguating_Context
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
-               "question": row['Question_negative_stereotype']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa4_neg.append(ans)  
+               # 1. QA: Context = Ambiguous_Context
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"],
+                    "question": row['Question_negative_stereotype']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa1_neg.append(ans)  
 
-          # 4. QA: Context = Ambiguous_Context + Disambiguating_Context
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
-               "question": row['Question_non_negative']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa4_pos.append(ans)
+               # 1. QA: Context = Ambiguous_Context
+               # Question = Question_non_negative
+               m = {"context": row["Ambiguous_Context"],
+                    "question": row['Question_non_negative']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa1_pos.append(ans) 
 
-          # 5. NLI: Premise = Ambiguous_Context + Disambiguating_Context
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
-               "hypothesis": row[stn]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli5_neg.append(ans)
+               # 2. QA: Context = Ambiguous_Context + Context_append_short
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
+                    "question": row['Question_negative_stereotype']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa2_neg.append(ans)  
 
-          # 5. NLI: Premise = Ambiguous_Context + Disambiguating_Context
-          # Hypothesis = Statement_negative_m
-          m = {"premise": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
-               "hypothesis": row[stp]}
-          inp = env.from_string(nli_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          nli5_pos.append(ans)
+               # 2. QA: Context = Ambiguous_Context + Context_append_short
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"],
+                    "question": row['Question_non_negative']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa2_pos.append(ans)  
 
-          # 5. QA: Context = Ambiguous_Context + Disambiguating_Context
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
-               "question": row['Question_negative_stereotype']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa5_neg.append(ans)  
+               # 3. QA: Context = Ambiguous_Context + Context_append_long
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"] + " " + row["Context_append_long"],
+                    "question": row['Question_negative_stereotype']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa3_neg.append(ans)  
 
-          # 5. QA: Context = Ambiguous_Context + Disambiguating_Context
-          # Question = Question_negative_stereotype
-          m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
-               "question": row['Question_non_negative']}
-          inp = env.from_string(qa_inp_only).render(**m)
-          ans = inference(inputs=inp)[0]['generated_text']
-          qa5_pos.append(ans)
+               # 3. QA: Context = Ambiguous_Context + Context_append_long
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"][:-1] + row["Context_append_short"] + " " + row["Context_append_long"],
+                    "question": row['Question_non_negative']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa3_pos.append(ans)
 
-     suffix = "_t" if thewoman else "_nt"
+               # 4. QA: Context = Ambiguous_Context + Disambiguating_Context
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
+                    "question": row['Question_negative_stereotype']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa4_neg.append(ans)  
 
-     df['nli_ambiguous_neg'+suffix] = nli1_neg
-     df['nli_ambiguous_pos'+suffix] = nli1_pos
-     df['qa_ambiguous_neg'+suffix] = qa1_neg
-     df['qa_ambiguous_pos'+suffix] = qa1_pos
-     df['nli_short_neg'+suffix] = nli2_neg
-     df['nli_short_pos'+suffix] = nli2_pos
-     df['qa_short_neg'+suffix] = qa2_neg
-     df['qa_short_pos'+suffix] = qa2_pos
-     df['nli_long_neg'+suffix] = nli3_neg
-     df['nli_long_pos'+suffix] = nli3_pos
-     df['qa_long_neg'+suffix] = qa3_neg
-     df['qa_long_pos'+suffix] = qa3_pos
-     df['nli_disambiguating_pro_neg'+suffix] = nli5_neg
-     df['nli_disambiguating_pro_pos'+suffix] = nli5_pos
-     df['qa_disambiguating_pro_neg'+suffix] = qa5_neg
-     df['qa_disambiguating_pro_pos'+suffix] = qa5_pos
-     df['nli_disambiguating_anti_neg'+suffix] = nli4_neg
-     df['nli_disambiguating_anti_pos'+suffix] = nli4_pos
-     df['qa_disambiguating_anti_neg'+suffix] = qa4_neg
-     df['qa_disambiguating_anti_pos'+suffix] = qa4_pos
+               # 4. QA: Context = Ambiguous_Context + Disambiguating_Context
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_anti_stereotype"],
+                    "question": row['Question_non_negative']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa4_pos.append(ans)
 
-     return df
+               # 5. QA: Context = Ambiguous_Context + Disambiguating_Context
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
+                    "question": row['Question_negative_stereotype']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa5_neg.append(ans)  
+
+               # 5. QA: Context = Ambiguous_Context + Disambiguating_Context
+               # Question = Question_negative_stereotype
+               m = {"context": row["Ambiguous_Context"]+ " " + row["Disambiguating_Context_stereotype"],
+                    "question": row['Question_non_negative']}
+               inp = env.from_string(temp).render(**m)
+               for i in range(NUM_GENS):
+                    ans = inference(inputs=inp)[0]['generated_text']
+                    qa5_pos.append(ans)
+     newdf['qa_ambiguous_neg'] = qa1_neg
+     newdf['qa_ambiguous_pos'] = qa1_pos
+     newdf['qa_short_neg'] = qa2_neg
+     newdf['qa_short_pos'] = qa2_pos
+     newdf['qa_long_neg'] = qa3_neg
+     newdf['qa_long_pos'] = qa3_pos
+     newdf['qa_disambiguating_pro_neg'] = qa5_neg
+     newdf['qa_disambiguating_pro_pos'] = qa5_pos
+     newdf['qa_disambiguating_anti_neg'] = qa4_neg
+     newdf['qa_disambiguating_anti_pos'] = qa4_pos
+
+
+     return newdf
 
 def fill_lex_div(df: pd.DataFrame, env):
      new_df = pd.DataFrame(columns=df.columns)
@@ -307,9 +372,9 @@ def fill_lex_div(df: pd.DataFrame, env):
                md.update(gender_names_dict)
                # print(md)
                for row_name in ["Ambiguous_Context",
-                              "Disambiguating_Context",
-                              "Disambiguating_Context_stereotype",
-                              "Disambiguating_Context_anti_stereotype"]:
+                                "Disambiguating_Context",
+                                "Disambiguating_Context_stereotype",
+                                "Disambiguating_Context_anti_stereotype"]:
                     r_ = row[row_name]
                     row[row_name] = env.from_string(r_).render(**md)
                new_df.loc[len(new_df)] = row
@@ -317,9 +382,16 @@ def fill_lex_div(df: pd.DataFrame, env):
      return new_df
 
 if __name__ == "__main__":
+     parser = argparse.ArgumentParser('argument for training')
+     parser.add_argument("--csv_name", type=str) # 
+     opt = parser.parse_args()
+
      # Read the file
-     pth = "BBQ/templates/new_templates - Gender_identity.csv"
-     results_pth = "outputs/BBQ/new_templates - Gender_identity - results.csv"
+     pth = opt.csv_name# "BBQ/templates/new_templates - Gender_identity.csv"
+     inference_pth = "BBQ/templates/new_templates - Gender_identity_inference.csv"
+     results_pth = "outputs/BBQ/Gender_identity - results.csv"
+     results_pdf_a = "outputs/BBQ/Gender_identity - results - amb.pdf"
+     results_pdf_d = "outputs/BBQ/Gender_identity - results - disamb.pdf"
      df = pd.read_csv(pth, dtype=str)
 
      # Jinja env.
@@ -330,27 +402,25 @@ if __name__ == "__main__":
 
      # If predictions are already saved, skip inference.
      skip_inference = False
-     if "nli_ambiguous_neg_t" in df.columns:
+     if pth == inference_pth:
           print("Skipping inference.")
           skip_inference = True
-
-     # Create anti-stereotypical disambiguating context.
-     # TODO: Disambiguating_Context_anti_stereotype
      
      results = pd.DataFrame(columns = ["Task", "Subtype", "Statement_nli", "BiasScore"])
+     
+     if not skip_inference:
+          # Create inference API, run inference
+          inference = InferenceApi(repo_id="bigscience/T0pp", token=API_TOKEN)
+          df = run_inference(df, env, inference)
+          df.to_csv(inference_pth, index=False)
+     
+     cats = ["ambiguous", "short", "long", "disambiguating_pro", "disambiguating_anti"]
      for thewoman in [True, False]:
-          if not skip_inference:
-               # Create inference API, run inference
-               inference = InferenceApi(repo_id="bigscience/T0pp", token=API_TOKEN)
-               df = run_inference(df, env, inference, thewoman=thewoman)
-               df.to_csv(pth, index=False)
-          
           # Compute bias scores for ambiguous, short, long,
           # disambiguating_pro, disambiguating_anti
           statement_nli = "the woman" if thewoman else "the man"
           suffix = "_t" if thewoman else "_nt"
 
-          cats = ["ambiguous", "short", "long", "disambiguating_pro", "disambiguating_anti"]
           for ind, cat in enumerate(cats):
                print(f"Running for {cat}.")
                # Short category name e.g. 0 - Ambiguous
@@ -359,22 +429,48 @@ if __name__ == "__main__":
 
                # NLI
                bias_nli = convert_nli_to_bool(df, 
-                                              colnames=[f"nli_{cat}_neg"+suffix, 
-                                                        f"nli_{cat}_pos"+suffix],
-                                              thewoman=thewoman,
-                                              disambiguating=disamb)
+                                             colnames=[f"nli_{cat}_neg"+suffix, 
+                                                       f"nli_{cat}_pos"+suffix],
+                                             thewoman=thewoman,
+                                             disambiguating=disamb)
                results.loc[len(results)] = ["NLI", catname, statement_nli, bias_nli]
 
-               # QA
+               # QA (No differences in statements, thus one run is sufficient.)
                if thewoman:
-                    bias_qa = convert_qa_to_bool(df, colnames=[f"qa_{cat}_neg"+suffix, 
-                                                            f"qa_{cat}_pos"+suffix],
-                                             disambiguating=disamb)
+                    bias_qa = convert_qa_to_bool(df, 
+                                                 colnames=[f"qa_{cat}_neg",  # FIXME
+                                                            f"qa_{cat}_pos"],
+                                                 disambiguating=disamb)
                     results.loc[len(results)] = ["QA", catname, None, bias_qa]
 
-     sns.lineplot(data=results, x="Subtype", y="BiasScore", hue="Task", style="Statement_nli")
+     # Save results to file.
      results['BiasScore'] = results['BiasScore'].round(2)
      print(results)
      results.to_csv(results_pth, index=False)     
+
+     # Save plot for ambiguous.
+     def foo(row):
+          if row['Task'] == "NLI":
+               return f"NLI ({row['Statement_nli'].capitalize()})"
+          else:
+               return row['Task']
+
+     results['Task Name'] = results.apply(lambda x: foo(x), axis=1)
+     amb = results.loc[~results['Subtype'].str.contains("Disambiguating")]
+     g = sns.lineplot(data=amb, x="Subtype", y="BiasScore", hue="Task Name", ci="sd")
+     g.get_figure().savefig(results_pdf_a) 
+     plt.figure()
+
+     # Save results for disambiguous.
+     disamb = results.loc[results['Subtype'].str.contains("Disambiguating")]
+     disamb.loc[:, "Imperfection Score"] = 1 - abs(disamb['BiasScore'])
+     disamb.loc[:, "pro/anti"] = disamb.Subtype.str.split("_", expand=True)[1]
+     disamb = disamb.fillna("")
+     disamb['Task Name'] = disamb["Task"] + " (" + disamb["Statement_nli"].str.capitalize() + ")"
+     g1 = sns.heatmap(disamb.pivot(index="pro/anti",
+                                  columns="Task Name",
+                                  values="Imperfection Score"), 
+                    cmap="crest", annot=True)
+     g1.get_figure().savefig(results_pdf_d) 
+
      
-          
