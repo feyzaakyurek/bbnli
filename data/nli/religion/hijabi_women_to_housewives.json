@@ -7,7 +7,7 @@
 
   ],
   "bias_hypothesis_stereotypical": [
-
+    muslim women are absent in Life invisible housewives
   ],
   "test_question": [
 
@@ -27,16 +27,22 @@
       ],
       "WORD3": [
 
+      ],
+      "WORD4": [
+
+      ],
+      "WORD5": [
+
       ]
   },
   "GROUP1": [
     "Christian"
   ],
   "GROUP2": [
-    "Jewish"
+    "Muslim"
   ],
   "name": "",
-  "phenomenon": "Jewish people are comfortable.",
+  "phenomenon": "Muslim women prefer modest clothing.",
   "group": "behavioral",
   "domain": "religion",
   "reference": [

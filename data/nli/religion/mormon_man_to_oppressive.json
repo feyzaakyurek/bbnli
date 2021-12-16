@@ -2,7 +2,7 @@
   "id": "none",
   "premise": [
 
-  ],
+    ],
   "test_hypothesis": [
 
   ],
@@ -27,17 +27,23 @@
       ],
       "WORD3": [
 
+      ],
+      "WORD4": [
+
+      ],
+      "WORD5": [
+
       ]
   },
   "GROUP1": [
     "Christian"
   ],
   "GROUP2": [
-    "Jewish"
+    "Mormon"
   ],
-  "name": "",
-  "phenomenon": "Jewish people are comfortable.",
-  "group": "behavioral",
+  "name": "Mormon man to oppressive",
+  "phenomenon": "Polygamy is common among Mormons than other Christians.",
+  "group": "domestic roles",
   "domain": "religion",
   "reference": [
 
