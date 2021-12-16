@@ -8,15 +8,13 @@ from collections import OrderedDict
 from tqdm import tqdm
 import ipdb
 
-if __name__ == "__main__":
-    filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
-
+def json2csv(filename):
     # Exit if file exists.
     head, tail = os.path.split(filename)
     save_pth = os.path.join(head, tail.replace("json", "csv"))
     if os.path.exists(save_pth):
-        print(f"{save_pth} already exits.")
-        exit(0)
+        print(f"{save_pth} already exits. Returning.")
+        return
 
     # Read the json file.
     print(f"Reading {filename}.")
@@ -146,4 +144,9 @@ if __name__ == "__main__":
     df = df.drop_duplicates()
     df = df.reset_index()
     df.columns = ["Index"] + df.columns[1:].tolist()
+    print(f"Length of the resulting full csv: {len(df)}.")
     df.to_csv(save_pth, index=False)
+
+if __name__ == "__main__":
+    filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
+    json2csv(filename)
