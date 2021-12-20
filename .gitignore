@@ -8,8 +8,18 @@ roberta-large-mnli/
 T0/
 T0_3B/
 gpt-neo-1.3B/
+promptsource/
+BBQ/
 
 # Data
+*.csv
+*.tsv
+*.err
+*.out
+*.png
+*.pdf
+*.txt
+*.ipynb
 data/bold/
 gpt-2-output-dataset/
 hurtlex-master/
@@ -23,10 +33,14 @@ dumped/
 transformers/
 promptsource/
 
+# Misc
+scripts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+.vscode/
 
 # C extensions
 *.so
