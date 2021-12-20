@@ -1,0 +1,45 @@
+{
+  "id": "none",
+  "premise": [
+
+  ],
+  "test_hypothesis": [
+
+  ],
+  "bias_hypothesis_stereotypical": [
+
+  ],
+  "test_question": [
+
+  ],
+  "bias_question_stereotypical": [
+
+  ],
+  "answer_choices": [
+    "Contradiction", "Neutral", "Entailment"
+  ],
+  "data": {
+      "WORD1": [
+
+      ],
+      "WORD2": [
+
+      ],
+      "WORD3": [
+
+      ]
+  },
+  "GROUP1": [
+    "white"
+  ],
+  "GROUP2": [
+    "black"
+  ],
+  "name": "",
+  "phenomenon": "",
+  "group": "societal",
+  "domain": "religion",
+  "reference": [
+
+  ]
+}
