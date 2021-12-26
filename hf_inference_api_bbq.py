@@ -485,16 +485,18 @@ if __name__ == "__main__":
      parser = argparse.ArgumentParser('argument for training')
      parser.add_argument("--csv_name", type=str) # "BBQ/templates/new_templates - Religion.csv"
      parser.add_argument("--domain", type=str) # religion
+     parser.add_argument("--model", type=str) # t0pp
      opt = parser.parse_args()
      domain = opt.domain
+     model = opt.model
 
      # Read the file
      pth = opt.csv_name 
-     inference_pth = f"outputs/BBQ/{domain}/new_templates - {domain}_inference.csv"
-     results_pth = f"outputs/BBQ/{domain}/{domain} - results.csv"
-     results_csv_a = f"outputs/BBQ/{domain}/{domain} - results - amb.csv"
-     results_pdf_d_bias = f"outputs/BBQ/{domain}/{domain} - results - disamb - bias.png"
-     results_pdf_d_acc = f"outputs/BBQ/{domain}/{domain} - results - disamb - acc.png"
+     inference_pth = f"outputs/BBQ/{domain}/{model}/new_templates - {domain}_inference.csv"
+     results_pth = f"outputs/BBQ/{domain}/{model}/{domain} - results.csv"
+     results_csv_a = f"outputs/BBQ/{domain}/{model}/{domain} - results - amb.csv"
+     results_pdf_d_bias = f"outputs/BBQ/{domain}/{model}/{domain} - results - disamb - bias.png"
+     results_pdf_d_acc = f"outputs/BBQ/{domain}/{model}/{domain} - results - disamb - acc.png"
      df = pd.read_csv(pth, dtype=str)
 
      # Jinja env.
@@ -513,7 +515,7 @@ if __name__ == "__main__":
      
      if not skip_inference:
           # Create inference API, run inference
-          inference = InferenceApi(repo_id="bigscience/T0pp", token=API_TOKEN)
+          inference = InferenceApi(repo_id=f"bigscience/{model.capitalize()}", token=API_TOKEN)
           df = run_inference(df, env, inference)
           df.to_csv(inference_pth, index=False)
      

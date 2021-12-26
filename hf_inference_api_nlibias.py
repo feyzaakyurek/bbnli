@@ -25,7 +25,7 @@ QA_TEMPLATES=["Given Context Answer Question",
               "Answer Question Given Context",
               "Read And Extract "]       
 
-def get_bias_score(df, colname="nli_t0pp_bool"):
+def get_bias_score(df, colname):
     
     # Group data into pro, anti, test
     pro = (df['hypothesis_type'] == "stereotypical") & (df[colname] != 1)
@@ -83,7 +83,7 @@ def convert_qa_to_bool(df, colname):
     df[colname+"_bool"] = df.apply(lambda x: convert_(x), axis=1) 
     return df
 
-def run_inference(df, env, inference, bigdqa, bigdnli):
+def run_inference(df, env, inference, model, bigdqa, bigdnli):
     
     # Create new df
     assert len(QA_TEMPLATES) == len(NLI_TEMPLATES)
@@ -126,7 +126,7 @@ def run_inference(df, env, inference, bigdqa, bigdnli):
                     ans = query_api(inp, inference)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
                     bigdnli[inp].append(ans) # update big d.
                     nli_l.append(ans)
-    newdf['nli_t0pp'] = nli_l
+    newdf[f'nli_{model}'] = nli_l
 
     # QA
     # For different QA prompts, we collect predictions.
@@ -147,6 +147,7 @@ def run_inference(df, env, inference, bigdqa, bigdnli):
                     # Sample NUM_GENS-many
                     qa_l.extend(sample(bigdqa[inp],NUM_GENS))
                 else:
+                    qa_l.extend(bigdqa[inp])
                     for _ in range(NUM_GENS - len(bigdqa[inp])):
                         ans = query_api(inp, inference)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
                         bigdqa[inp].append(ans) # update big d.
@@ -158,7 +159,7 @@ def run_inference(df, env, inference, bigdqa, bigdnli):
                     bigdqa[inp].append(ans) # update big d.
                     qa_l.append(ans)
 
-    newdf['qa_t0pp'] = qa_l
+    newdf[f'qa_{model}'] = qa_l
     return newdf, bigdqa, bigdnli
 
 def query_api(inp, inference, counter=0):
@@ -173,45 +174,47 @@ def query_api(inp, inference, counter=0):
     return ans
         
 
-def get_nlibias_scores(csv_name, bigdqa, bigdnli, num_gens=1):
+def get_nlibias_scores(csv_name, model, bigdqa, bigdnli, num_gens=1, skip_inference=True):
     global NUM_GENS 
     NUM_GENS = num_gens
 
     # Read the file
     pth = csv_name
-    results_pth = pth.split(".")[0] + f"-n{num_gens}-bias-results.tsv"
+    results_pth = pth.split(".")[0] + f"{model}-n{num_gens}-bias-results.tsv"
     df = pd.read_csv(pth, dtype=str)
 
     # Jinja env.
     env = nativetypes.NativeEnvironment()
 
-    # If predictions are already saved, skip inference.
-    skip_inference = False
-    if "nli_t0pp" in df.columns:
-        print("NOT Skipping inference.")
-        skip_inference = False
+    # skip_inference = False
+    # if "nli_{}" in df.columns:
+    #     print("NOT Skipping inference.")
+    #     skip_inference = True
 
     results = pd.DataFrame(columns = ["Task",
                                       "BiasScore",
                                       "Stereo Count",
                                       "TestAccGap [(Pro-Anti)/Pro]",
                                       "Test Count"])
+
+    # If predictions are already saved, skip inference.
     if not skip_inference:
+        print("Running inference.")
         # Create inference API, run inference
-        inference = InferenceApi(repo_id="bigscience/T0pp", token=API_TOKEN)
-        df, bigdqa, bigdnli = run_inference(df, env, inference, bigdqa, bigdnli)
+        inference = InferenceApi(repo_id=f"bigscience/{model.capitalize()}", token=API_TOKEN)
+        df, bigdqa, bigdnli = run_inference(df, env, inference, model, bigdqa, bigdnli)
         df.to_csv(pth, index=False)
 
-    df = convert_nli_to_bool(df, colname="nli_t0pp")
-    test_acc_gap, bias_score = get_bias_score(df, colname="nli_t0pp_bool")
+    df = convert_nli_to_bool(df, colname=f"nli_{model}")
+    test_acc_gap, bias_score = get_bias_score(df, colname=f"nli_{model}_bool")
     results.loc[len(results)] = ["NLI",
                                     bias_score[0],
                                     bias_score[1],
                                     test_acc_gap[0],
                                     test_acc_gap[1]]
 
-    df = convert_qa_to_bool(df, colname="qa_t0pp")
-    test_acc_gap, bias_score = get_bias_score(df, colname="qa_t0pp_bool")
+    df = convert_qa_to_bool(df, colname=f"qa_{model}")
+    test_acc_gap, bias_score = get_bias_score(df, colname=f"qa_{model}_bool")
     results.loc[len(results)] = ["QA",
                                     bias_score[0],
                                     bias_score[1],
@@ -225,6 +228,7 @@ def get_nlibias_scores(csv_name, bigdqa, bigdnli, num_gens=1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('argument for training')
     parser.add_argument("--csv_name", type=str) # 
+    parser.add_argument("--model", type=str) # 
     opt = parser.parse_args()
-    get_nlibias_scores(opt.csv_name, {}, {})
+    get_nlibias_scores(opt.csv_name, opt.model, {}, {})
           
