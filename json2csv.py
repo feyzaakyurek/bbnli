@@ -8,13 +8,16 @@ from collections import OrderedDict
 from tqdm import tqdm
 import ipdb
 
-def json2csv(filename):
+def json2csv(filename, overwrite=False):
     # Exit if file exists.
     head, tail = os.path.split(filename)
     save_pth = os.path.join(head, tail.replace("json", "csv"))
     if os.path.exists(save_pth):
-        print(f"{save_pth} already exits. Returning.")
-        return
+        print(f"{save_pth} already exits.")
+        if not overwrite:
+            return
+        else:
+            print("Overwriting.")
 
     # Read the json file.
     print(f"Reading {filename}.")
@@ -46,7 +49,7 @@ def json2csv(filename):
     keys = list(data.keys())
     
     print("Iterating over premises...")
-    for ind,pre in enumerate(tqdm(inp['premise'])):
+    for ind,pre in enumerate(inp['premise']):
         for datum in variables:
             m = dict(zip(keys, datum))
             m["GROUP1"] = group1
@@ -149,4 +152,5 @@ def json2csv(filename):
 
 if __name__ == "__main__":
     filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
-    json2csv(filename)
+    overwrite = sys.argv[2] == "--overwrite"
+    json2csv(filename, overwrite)
