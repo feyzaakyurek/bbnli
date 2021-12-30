@@ -8,6 +8,7 @@ from tqdm import tqdm
 from BBQ.utils import *
 import argparse
 import json
+import requests
 
 
 # headers = {"Authorization": f"Bearer {API_TOKEN}"}
@@ -15,6 +16,9 @@ import json
 
 API_TOKEN=[el for el in open("hf_key", 'r')][0]
 NUM_GENS=5
+MODEL_MAP = {"t0": "T0", "t0p": "T0p", "t0pp": "T0pp", "t03b": "T0_3B"}
+headers = {"Authorization": f"Bearer {API_TOKEN}"}
+API_URL_BASE = "https://api-inference.huggingface.co/pipeline/text2text-generation/bigscience/"
 NLI_TEMPLATES=["can we infer",
                "GPT-3 style",
                # "consider always/sometimes/never",
@@ -83,107 +87,104 @@ def convert_qa_to_bool(df, colname):
     df[colname+"_bool"] = df.apply(lambda x: convert_(x), axis=1) 
     return df
 
-def run_inference(df, env, inference, model, bigdqa, bigdnli):
-    
+def query(payload):
+    data = json.dumps(payload)
+    response = requests.request("POST", API_URL, headers=headers, data=data)
+    return json.loads(response.content.decode("utf-8"))
+
+def query_api(inp, counter=0):
+     try:
+          ans = query({"inputs": inp, "options":{"wait_for_model":True}}) #inference(inputs=inp)
+     except json.decoder.JSONDecodeError:
+          print("Trying again, server returned None. Counter ", counter)
+          ans = query_api(inp, counter=counter+1)
+     return ans
+        
+def get_nli_pred(row, temp, bigdnli):
+    m = {"premise": row["premise"],
+         "hypothesis": row["hypothesis"]}
+    inp = env.from_string(temp).render(**m)
+
+    if inp in bigdnli:
+        if len(bigdnli[inp]) == NUM_GENS:
+            return bigdnli[inp]
+        elif len(bigdnli[inp]) > NUM_GENS:
+            # Sample NUM_GENS-many
+            return sample(bigdnli[inp],NUM_GENS)
+        else:
+            for _ in range(NUM_GENS - len(bigdnli[inp])):
+                ans = query_api(inp)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"
+                bigdnli[inp].append(ans) # accummulate preds, updates bigd as well.
+            return bigdnli[inp]
+    else:
+        bigdnli[inp] = []
+        for _ in range(NUM_GENS):
+            ans = query_api(inp)[0]['generated_text'] # "true" if random.random() > 0.5 else "false" 
+            bigdnli[inp].append(ans) # update big d.
+        return bigdnli[inp]
+
+def get_qa_pred(row, temp, bigdqa):
+    m = {"context": row["premise"],
+         "question": row["question"][:-1] + ", yes, no or maybe?"}
+    inp = env.from_string(temp).render(**m)
+    if inp in bigdqa:
+        if len(bigdqa[inp]) == NUM_GENS:
+            return bigdqa[inp]
+        elif len(bigdqa[inp]) > NUM_GENS:
+            # Sample NUM_GENS-many
+            return sample(bigdqa[inp],NUM_GENS)
+        else:
+            qa_l = bigdqa[inp]
+            for _ in range(NUM_GENS - len(bigdqa[inp])):
+                ans = query_api(inp)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
+                bigdqa[inp].append(ans) # update big d.
+                qa_l.append(ans) # accummulate preds.
+            return qa_l
+    else:
+        bigdqa[inp] = []
+        qa_l = []
+        for i in range(NUM_GENS):
+            ans = query_api(inp)[0]['generated_text']  # "christian" if random.random() > 0.5 else "muslim"  # 
+            bigdqa[inp].append(ans) # update big d.
+            qa_l.append(ans)
+        return qa_l
+
+def run_inference(df, model, bigdqa, bigdnli):
     # Create new df
     assert len(QA_TEMPLATES) == len(NLI_TEMPLATES)
-    factor = NUM_GENS * len(QA_TEMPLATES)
-    newdf = pd.concat([df]*factor)#.sort_index().reset_index(drop=True)
-    newdf["NLI Template"] = np.repeat(NLI_TEMPLATES, (len(df) * NUM_GENS))
-    newdf["QA Template"] = np.repeat(QA_TEMPLATES, (len(df) * NUM_GENS))
+    newdf = pd.DataFrame(columns = list(df.columns) + ["NLI template", "QA Template"] + [f"nli_{model}", f"qa_{model}"])
 
     # Loads templates and iterates over each premise
     template_collection = promptsource.templates.TemplateCollection()
 
-    # Create lists to accummulate predictions.
-    nli_l, qa_l = [], []
-
     # For different NLI prompts, we collect predictions.
-    for nli_temp in NLI_TEMPLATES:
-        temp = template_collection.get_dataset("anli", None)[nli_temp]
-        temp = temp.jinja.split(" |||")[0]
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        for nli_temp, qa_temp in zip(NLI_TEMPLATES,QA_TEMPLATES):
+            list_of_preds = []
+            temp = template_collection.get_dataset("anli", None)[nli_temp]
+            temp = temp.jinja.split(" |||")[0]
+            nli_preds = get_nli_pred(row, temp, bigdnli)
 
-        # Iterate over BBNLItemplates
-        for _, row in tqdm(df.iterrows(), total=len(df)):
-            # 1. NLI
-            m = {"premise": row["premise"],
-                "hypothesis": row["hypothesis"]}
-            inp = env.from_string(temp).render(**m)
-            if inp in bigdnli:
-                if len(bigdnli[inp]) == NUM_GENS:
-                    nli_l.extend(bigdnli[inp])
-                elif len(bigdnli[inp]) > NUM_GENS:
-                    # Sample NUM_GENS-many
-                    nli_l.extend(sample(bigdnli[inp],NUM_GENS))
-                else:
-                    for _ in range(NUM_GENS - len(bigdnli[inp])):
-                        ans = query_api(inp, inference)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
-                        bigdnli[inp].append(ans) # update big d.
-                        nli_l.append(ans) # accummulate preds.
-            else:
-                bigdnli[inp] = []
-                for _ in range(NUM_GENS):
-                    ans = query_api(inp, inference)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
-                    bigdnli[inp].append(ans) # update big d.
-                    nli_l.append(ans)
-    newdf[f'nli_{model}'] = nli_l
+            temp = template_collection.get_dataset("quoref", None)[qa_temp]
+            temp = temp.jinja.split(" |||")[0]
+            qa_preds = get_qa_pred(row, temp, bigdqa)
 
-    # QA
-    # For different QA prompts, we collect predictions.
-    for qa_temp in QA_TEMPLATES:
-        temp = template_collection.get_dataset("quoref", None)[qa_temp]
-        temp = temp.jinja.split(" |||")[0]
+            for nli_pred, qa_pred in zip(nli_preds, qa_preds):
+                newdf.loc[len(newdf)] = row.tolist() + [nli_temp, qa_temp] + [nli_pred, qa_pred]
+    return newdf
 
-        # Iterate over BBQ templates
-        for _, row in tqdm(df.iterrows(), total=len(df)):
-            # 2. QA 
-            m = {"context": row["premise"],
-                "question": row["question"][:-1] + ", yes, no or maybe?"}
-            inp = env.from_string(temp).render(**m)
-            if inp in bigdqa:
-                if len(bigdqa[inp]) == NUM_GENS:
-                    qa_l.extend(bigdqa[inp])
-                elif len(bigdqa[inp]) > NUM_GENS:
-                    # Sample NUM_GENS-many
-                    qa_l.extend(sample(bigdqa[inp],NUM_GENS))
-                else:
-                    qa_l.extend(bigdqa[inp])
-                    for _ in range(NUM_GENS - len(bigdqa[inp])):
-                        ans = query_api(inp, inference)[0]['generated_text'] # "true" if random.random() > 0.5 else "false"  
-                        bigdqa[inp].append(ans) # update big d.
-                        qa_l.append(ans) # accummulate preds.
-            else:
-                bigdqa[inp] = []
-                for i in range(NUM_GENS):
-                    ans = query_api(inp, inference)[0]['generated_text']  # "christian" if random.random() > 0.5 else "muslim"  # 
-                    bigdqa[inp].append(ans) # update big d.
-                    qa_l.append(ans)
 
-    newdf[f'qa_{model}'] = qa_l
-    return newdf, bigdqa, bigdnli
-
-def query_api(inp, inference, counter=0):
-    if counter < 10:
-        try:
-            ans = inference(inputs=inp)
-        except json.decoder.JSONDecodeError:
-            print("Trying again, server returned None.")
-            ans = query_api(inp, counter=counter+1)
-    else:
-        raise ValueError()
-    return ans
-        
-
-def get_nlibias_scores(csv_name, model, bigdqa, bigdnli, num_gens=1, skip_inference=True):
+def get_bias_scores(csv_name, model, bigdqa, bigdnli, num_gens=1, skip_inference=True):
     global NUM_GENS 
     NUM_GENS = num_gens
 
     # Read the file
     pth = csv_name
-    results_pth = pth.split(".")[0] + f"{model}-n{num_gens}-bias-results.tsv"
+    results_pth = pth.split(".")[0] + f"-{model}-n{num_gens}-bias-results.tsv"
     df = pd.read_csv(pth, dtype=str)
 
     # Jinja env.
+    global env
     env = nativetypes.NativeEnvironment()
 
     # skip_inference = False
@@ -200,18 +201,19 @@ def get_nlibias_scores(csv_name, model, bigdqa, bigdnli, num_gens=1, skip_infere
     # If predictions are already saved, skip inference.
     if not skip_inference:
         print("Running inference.")
-        # Create inference API, run inference
-        inference = InferenceApi(repo_id=f"bigscience/{model.capitalize()}", token=API_TOKEN)
-        df, bigdqa, bigdnli = run_inference(df, env, inference, model, bigdqa, bigdnli)
+        # Run inference
+        global API_URL
+        API_URL = API_URL_BASE + MODEL_MAP[model]
+        df = run_inference(df, model, bigdqa, bigdnli)
         df.to_csv(pth, index=False)
 
     df = convert_nli_to_bool(df, colname=f"nli_{model}")
     test_acc_gap, bias_score = get_bias_score(df, colname=f"nli_{model}_bool")
     results.loc[len(results)] = ["NLI",
-                                    bias_score[0],
-                                    bias_score[1],
-                                    test_acc_gap[0],
-                                    test_acc_gap[1]]
+                                 bias_score[0],
+                                 bias_score[1],
+                                 test_acc_gap[0],
+                                 test_acc_gap[1]]
 
     df = convert_qa_to_bool(df, colname=f"qa_{model}")
     test_acc_gap, bias_score = get_bias_score(df, colname=f"qa_{model}_bool")
@@ -230,5 +232,5 @@ if __name__ == "__main__":
     parser.add_argument("--csv_name", type=str) # 
     parser.add_argument("--model", type=str) # 
     opt = parser.parse_args()
-    get_nlibias_scores(opt.csv_name, opt.model, {}, {})
+    get_bias_scores(opt.csv_name, opt.model, {}, {})
           
