@@ -10,12 +10,15 @@ import argparse
 import numpy as np
 import logging
 import json
+import requests
 import matplotlib.pyplot as plt
 
 
 NUM_GENS=5
 API_TOKEN=[el for el in open("hf_key", 'r')][0]
 MODEL_MAP = {"t0": "T0", "t0p": "T0p", "t0pp": "T0pp", "t03b": "T0_3B"}
+headers = {"Authorization": f"Bearer {API_TOKEN}"}
+API_URL_BASE = "https://api-inference.huggingface.co/pipeline/text2text-generation/bigscience/"
 gender_names_dict = {"NAME1": "man", "NAME2": "woman"}
 inference_columns = [
      "nli_ambiguous_neg_t",
@@ -180,17 +183,18 @@ def convert_qa_to_bool(df, colnames, disambiguating=False, domain="race"):
           bias_score = bias_score * (1 - acc)
      return bias_score, acc
 
+def query(payload):
+    data = json.dumps(payload)
+    response = requests.request("POST", API_URL, headers=headers, data=data)
+    return json.loads(response.content.decode("utf-8"))
 
-def query_api(inp, inference, counter=0):
-    if counter < 10:
-        try:
-            ans = inference(inputs=inp)
-        except json.decoder.JSONDecodeError:
-            print("Trying again, server returned None.")
-            ans = query_api(inp, counter=counter+1)
-    else:
-        raise ValueError()
-    return ans
+def query_api(inp, counter=0):
+     try:
+          ans = query({"inputs": inp, "options":{"wait_for_model":True}}) #inference(inputs=inp)
+     except json.decoder.JSONDecodeError:
+          print("Trying again, server returned None. Counter ", counter)
+          ans = query_api(inp, counter=counter+1)
+     return ans
 
 
 def get_nli_pred(row,
@@ -209,7 +213,7 @@ def get_nli_pred(row,
                     m = {"premise": row["Ambiguous_Context"],
                          "hypothesis": row[st]}
                     inp = env.from_string(temp).render(**m)
-                    ans.append(query_api(inp, inference)[0]['generated_text'])
+                    ans.append(query_api(inp)[0]['generated_text'])
           else:
                if pro:
                     dis = "Disambiguating_Context_stereotype"
@@ -219,7 +223,7 @@ def get_nli_pred(row,
                     m = {"premise": row["Ambiguous_Context"] + " " + row[dis],
                          "hypothesis": row[st]}
                     inp = env.from_string(temp).render(**m)
-                    ans.append(query_api(inp, inference)[0]['generated_text'])
+                    ans.append(query_api(inp)[0]['generated_text'])
      return ans
 
 def get_qa_pred(row,
@@ -233,7 +237,7 @@ def get_qa_pred(row,
                m = {"context": row["Ambiguous_Context"],
                     "question": row[q]}
                inp = env.from_string(temp).render(**m)
-               ans.append(query_api(inp, inference)[0]['generated_text'])
+               ans.append(query_api(inp)[0]['generated_text'])
      else:
           if pro:
                dis = "Disambiguating_Context_stereotype"
@@ -243,7 +247,7 @@ def get_qa_pred(row,
                m = {"context": row["Ambiguous_Context"] + " " + row[dis],
                     "question": row[q]}
                inp = env.from_string(temp).render(**m)
-               ans.append(query_api(inp, inference)[0]['generated_text'])
+               ans.append(query_api(inp)[0]['generated_text'])
      return ans
 
 def run_inference(df):
@@ -372,8 +376,8 @@ if __name__ == "__main__":
      
      if not skip_inference:
           # Create inference API, run inference
-          global inference
-          inference = InferenceApi(repo_id=f"bigscience/{MODEL_MAP[model]}", token=API_TOKEN)
+          global API_URL
+          API_URL = API_URL_BASE + MODEL_MAP[model]
           df = run_inference(df)
           df.to_csv(inference_pth, index=False)
      
