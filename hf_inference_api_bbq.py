@@ -11,6 +11,7 @@ import numpy as np
 import logging
 import json
 import requests
+import os
 import matplotlib.pyplot as plt
 
 
@@ -352,6 +353,7 @@ if __name__ == "__main__":
 
      # Read the file
      pth = opt.csv_name 
+     os.makedirs(f"outputs/BBQ/{domain}/{model}", exist_ok=True)
      inference_pth = f"outputs/BBQ/{domain}/{model}/new_templates - {domain}_inference.csv"
      results_pth = f"outputs/BBQ/{domain}/{model}/{domain} - results.csv"
      results_csv_a = f"outputs/BBQ/{domain}/{model}/{domain} - results - amb.csv"
