@@ -1,0 +1,7 @@
+{
+      "template1": "Based on {{context}}, how would you answer the question '{{question}}'",
+      "template2": "Provided that {{context}}, answer this question '{{question}}'",
+      "template3": "You are asked to answer '{{question}}' based on the fact that {{context}}",
+      "template4": "Only considering the following {{contex}}, answer the question: '{{question}}'"
+}
+
