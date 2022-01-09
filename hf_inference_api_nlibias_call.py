@@ -8,7 +8,7 @@ import glob
 import os
 import ipdb
 
-overwrite_csv = True
+overwrite_csv = False
 skip_inference = False
 
 if __name__ == "__main__":
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
         # Create predictions and compute bias scores
         if not skip_inference:
-            files = glob.glob(f'data/nli/{domain}/*.csv')
+            files = glob.glob(f'outputs/nlibias/{domain}/*.csv')
             for file in files:
                 print(f"Creating predictions and computing bias: {file}")
                 bigdqa, bigdnli = get_bias_scores(file, model, bigdqa, bigdnli, num_gens, skip_inference=skip_inference)
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     ll = []
     keys = []
     for domain in ["race", "religion", "gender"]:
-        files = glob.glob(f'data/nli/{domain}/*-{model}-n{num_gens}-bias-results.tsv')
+        files = glob.glob(f'outputs/nlibias/{domain}/*-{model}-n{num_gens}-bias-results.tsv')
         for file in files:
             catname = os.path.split(file)[-1].split(f"-{model}")[0]
             
