@@ -15,12 +15,12 @@ if __name__ == "__main__":
 
     num_gens = 5
     model = "t0"
-    for domain in ["religion"]:
+    for domain in ["religion", "gender", "race"]:
         # Populate csv files using json topics.
         files = glob.glob(f'data/nli/{domain}/*.json')
         for file in files:
             print(f"Creating csv from json: {file}")
-            json2csv(file, overwrite=overwrite_csv)
+            json2csv(file, domain, overwrite=overwrite_csv)
 
         # Load the big inference dict for the domain
         bigdqa, bigdnli = {}, {}
@@ -55,11 +55,11 @@ if __name__ == "__main__":
         for file in files:
             catname = os.path.split(file)[-1].split(f"-{model}")[0]
             
-            if all([el not in catname for el in ["greedy", "clean", "moms"]]):
-                keys.append(catname)
-                df = pd.read_csv(file, sep="\t")
-                df["Domain"] = domain.capitalize()
-                print(catname)
-                ll.append(df)
+            # if all([el not in catname for el in ["greedy", "clean", "moms"]]):
+            keys.append(catname)
+            df = pd.read_csv(file, sep="\t")
+            df["Domain"] = domain.capitalize()
+            print(catname)
+            ll.append(df)
 
     bigdf = pd.concat(ll, keys=keys)

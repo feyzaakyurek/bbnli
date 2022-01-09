@@ -187,11 +187,6 @@ def get_bias_scores(csv_name, model, bigdqa, bigdnli, num_gens=1, skip_inference
     global env
     env = nativetypes.NativeEnvironment()
 
-    # skip_inference = False
-    # if "nli_{}" in df.columns:
-    #     print("NOT Skipping inference.")
-    #     skip_inference = True
-
     results = pd.DataFrame(columns = ["Task",
                                       "BiasScore",
                                       "Stereo Count",
