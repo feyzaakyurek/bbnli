@@ -8,10 +8,11 @@ from collections import OrderedDict
 from tqdm import tqdm
 import ipdb
 
-def json2csv(filename, overwrite=False):
+def json2csv(filename, domain, overwrite=False):
     # Exit if file exists.
-    head, tail = os.path.split(filename)
-    save_pth = os.path.join(head, tail.replace("json", "csv"))
+    _, tail = os.path.split(filename)
+    save_pth = os.path.join(f"outputs/nlibias/{domain}",
+                            tail.replace("json", "csv"))
     if os.path.exists(save_pth):
         print(f"{save_pth} already exits.")
         if not overwrite:
@@ -152,5 +153,6 @@ def json2csv(filename, overwrite=False):
 
 if __name__ == "__main__":
     filename = sys.argv[1] # e.g. "data/nli/gender/man_is_to_programmer.json"
-    overwrite = sys.argv[2] == "--overwrite"
-    json2csv(filename, overwrite)
+    domain = sys.argv[2]
+    overwrite = sys.argv[3] == "--overwrite"
+    json2csv(filename, domain, overwrite)
