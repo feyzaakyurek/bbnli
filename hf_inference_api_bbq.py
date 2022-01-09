@@ -417,9 +417,9 @@ if __name__ == "__main__":
                     results.loc[len(results)] = ["QA", "Accuracy", catname, None, acc_qa]
 
      # Save results to file.
-     results['Score'] = results['Score'].round(2)
      print(results)
      results.to_csv(results_pth, index=False)     
+     
 
      # Save plot for ambiguous.
      def foo(row):
