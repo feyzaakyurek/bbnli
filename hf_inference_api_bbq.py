@@ -1,3 +1,4 @@
+from typing import OrderedDict
 from huggingface_hub.inference_api import InferenceApi
 from jinja2 import nativetypes
 import promptsource.templates
@@ -12,6 +13,7 @@ import logging
 import json
 import requests
 import os
+import itertools
 import matplotlib.pyplot as plt
 
 
@@ -304,49 +306,43 @@ def run_inference(df):
 def fill_lex_div(df: pd.DataFrame, env):
      new_df = pd.DataFrame(columns=df.columns)
      for _, row in df.iterrows():
-          # # Lexical diversity for WORDX
-          # m = return_list_from_string(row['Lexical_diversity'])
-          # # print(m)
-          # ln = len(m[0])
-          # for j in range(ln):
-          #      # Four columns to fill in
-          #      md = convert_list_to_dict(m, j)
-          #      md.update(gender_names_dict)
-          #      # print(md)
-          #      for col_name in ["Ambiguous_Context",
-          #                       "Disambiguating_Context",
-          #                       "Disambiguating_Context_stereotype",
-          #                       "Disambiguating_Context_anti_stereotype"]:
-          #           r_ = row[col_name]
-          #           row[col_name] = env.from_string(r_).render(**md)
-          #      new_df.loc[len(new_df)] = row
-          
+          # Lexical diversity for WORDX
+          lex = OrderedDict()
+          m = return_list_from_string(row['Lexical_diversity'])
+          for k,ml in enumerate(m):
+               if len(ml) > 0:
+                    lex["WORD"+str(k+1)] = ml
+          variables = list(itertools.product(*list(lex.values())))
+
           # Alternative subgroups
           targets = eval(row["Known_stereotyped_groups"])
           non_targets = eval(row['Non-target_group'])
           for target in targets:
                for non_target in non_targets:
-                    md = {"NAME1": non_target, "NAME2": target}
-                    row_copy = row.copy()
-                    for col_name in ["Ambiguous_Context",
-                                     "Disambiguating_Context",
-                                     "Disambiguating_Context_stereotype",
-                                     "Disambiguating_Context_anti_stereotype",
-                                     "Statement_negative",
-                                     "Statement_non_negative",
-                                     "Statement_negative_m",
-                                     "Statement_non_negative_m"]:
-                         r_ = row_copy[col_name]
-                         row_copy[col_name] = env.from_string(r_).render(**md)
-                    new_df.loc[len(new_df)] = row_copy
-     
+                    for var in [variables[0]]: # WARNING, considering only one pair of lex div items.
+                         md = {"NAME1": non_target, "NAME2": target}
+                         var1 = "" if len(var)==1 else var[1]
+                         md.update({"WORD1":var[0], "WORD2":var1})
+                         print("lex: ", md)
+                         row_copy = row.copy()
+                         for col_name in ["Ambiguous_Context",
+                                        "Disambiguating_Context",
+                                        "Disambiguating_Context_stereotype",
+                                        "Disambiguating_Context_anti_stereotype",
+                                        "Statement_negative",
+                                        "Statement_non_negative",
+                                        "Statement_negative_m",
+                                        "Statement_non_negative_m"]:
+                              r_ = row_copy[col_name]
+                              row_copy[col_name] = env.from_string(r_).render(**md)
+                         new_df.loc[len(new_df)] = row_copy
      return new_df
 
 if __name__ == "__main__":
      parser = argparse.ArgumentParser('argument for training')
      parser.add_argument("--csv_name", type=str) # "BBQ/templates/new_templates - Religion.csv"
      parser.add_argument("--domain", type=str) # religion
-     parser.add_argument("--model", type=str) # t0pp
+     parser.add_argument("--model", type=str) # t0
      opt = parser.parse_args()
      domain = opt.domain
      model = opt.model
