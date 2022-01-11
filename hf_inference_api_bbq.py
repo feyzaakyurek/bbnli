@@ -36,12 +36,24 @@ inference_columns = [
      "nli_disambiguating_anti_pos_t",
      "nli_disambiguating_anti_neg_nt",
      "nli_disambiguating_anti_pos_nt",
+     "nli_ambiguous_short_neg_t",
+     "nli_ambiguous_short_pos_t",
+     "nli_ambiguous_short_neg_nt",
+     "nli_ambiguous_short_pos_nt",
+     "nli_ambiguous_long_neg_t",
+     "nli_ambiguous_long_pos_t",
+     "nli_ambiguous_long_neg_nt",
+     "nli_ambiguous_long_pos_nt",
      "qa_ambiguous_neg",
      "qa_ambiguous_pos",
      "qa_disambiguating_pro_neg",
      "qa_disambiguating_pro_pos",
      "qa_disambiguating_anti_neg",
-     "qa_disambiguating_anti_pos"
+     "qa_disambiguating_anti_pos",
+     "qa_ambiguous_short_neg",
+     "qa_ambiguous_short_pos",
+     "qa_ambiguous_long_neg",
+     "qa_ambiguous_long_pos"
 ]
 
 
@@ -200,10 +212,21 @@ def query_api(inp, counter=0):
      return ans
 
 
+def curate_amb_premise(row, append):
+     if append is None:
+          return row["Ambiguous_Context"]
+     elif append == "short":
+          return row["Ambiguous_Context"][:-1] + row['Context_append_short']
+     elif append == "long":
+          return row["Ambiguous_Context"][:-1] + row['Context_append_short'] + " " + row['Context_append_long']
+     else:
+          raise ValueError("append is unknown.")
+
 def get_nli_pred(row,
                  temp,
                  ambiguous,
-                 pro=False):
+                 pro=False,
+                 append=None):
      ans = []
      for thetarget in [True, False]:
           if thetarget:
@@ -213,7 +236,8 @@ def get_nli_pred(row,
 
           if ambiguous:
                for st in (stn, stp):
-                    m = {"premise": row["Ambiguous_Context"],
+                    premise = curate_amb_premise(row, append)
+                    m = {"premise": premise,
                          "hypothesis": row[st]}
                     inp = env.from_string(temp).render(**m)
                     ans.append(query_api(inp)[0]['generated_text'])
@@ -232,12 +256,14 @@ def get_nli_pred(row,
 def get_qa_pred(row,
                 temp,
                 ambiguous,
-                pro=False):
+                pro=False,
+                append=None):
      ans = []
      qn, qp = "Question_negative_stereotype", "Question_non_negative"
      if ambiguous:
           for q in (qn,qp):
-               m = {"context": row["Ambiguous_Context"],
+               context = curate_amb_premise(row, append)
+               m = {"context": context,
                     "question": row[q]}
                inp = env.from_string(temp).render(**m)
                ans.append(query_api(inp)[0]['generated_text'])
@@ -280,7 +306,18 @@ def run_inference(df):
                     list_of_preds.extend(get_nli_pred(row,
                                                       temp,
                                                       ambiguous=False,
-                                                      pro=False))                                 
+                                                      pro=False))
+                    # Ambiguous - short
+                    list_of_preds.extend(get_nli_pred(row,
+                                                      temp,
+                                                      ambiguous=True,
+                                                      append="short"))
+                    # Ambiguous - long
+                    list_of_preds.extend(get_nli_pred(row,
+                                                      temp,
+                                                      ambiguous=True,
+                                                      append="long"))                                  
+
 
                     temp = template_collection.get_dataset("quoref", None)[qa_temp]
                     temp = temp.jinja.split(" |||")[0]
@@ -298,6 +335,17 @@ def run_inference(df):
                                                      temp,
                                                      ambiguous=False,
                                                      pro=False))
+                    # Ambiguous - short
+                    list_of_preds.extend(get_qa_pred(row,
+                                                     temp,
+                                                     ambiguous=True,
+                                                     append="short"))
+                    # Ambiguous - long
+                    list_of_preds.extend(get_qa_pred(row,
+                                                     temp,
+                                                     ambiguous=True,
+                                                     append="long"))
+
                                                      
                     newdf.loc[len(newdf)] = row.tolist() + [nli_temp, qa_temp] + list_of_preds
      
@@ -307,12 +355,16 @@ def fill_lex_div(df: pd.DataFrame, env):
      new_df = pd.DataFrame(columns=df.columns)
      for _, row in df.iterrows():
           # Lexical diversity for WORDX
-          lex = OrderedDict()
-          m = return_list_from_string(row['Lexical_diversity'])
-          for k,ml in enumerate(m):
-               if len(ml) > 0:
-                    lex["WORD"+str(k+1)] = ml
+          lex = OrderedDict({"WORD1":[""]})
+          
+          row["Lexical_diversity"] = str(row["Lexical_diversity"])
+          if row["Lexical_diversity"] != "" and row["Lexical_diversity"] != "nan":
+               m = return_list_from_string(row['Lexical_diversity'])
+               for k,ml in enumerate(m):
+                    if len(ml) > 0:
+                         lex["WORD"+str(k+1)] = ml
           variables = list(itertools.product(*list(lex.values())))
+          
 
           # Alternative subgroups
           targets = eval(row["Known_stereotyped_groups"])
@@ -320,12 +372,14 @@ def fill_lex_div(df: pd.DataFrame, env):
           for target in targets:
                for non_target in non_targets:
                     for var in [variables[0]]: # WARNING, considering only one pair of lex div items.
-                         md = {"NAME1": non_target, "NAME2": target}
+                         md = {"NAME2": non_target, "NAME1": target}
                          var1 = "" if len(var)==1 else var[1]
                          md.update({"WORD1":var[0], "WORD2":var1})
                          print("lex: ", md)
                          row_copy = row.copy()
                          for col_name in ["Ambiguous_Context",
+                                        "Context_append_short",
+                                        "Context_append_long",
                                         "Disambiguating_Context",
                                         "Disambiguating_Context_stereotype",
                                         "Disambiguating_Context_anti_stereotype",
@@ -380,7 +434,7 @@ if __name__ == "__main__":
           df.to_csv(inference_pth, index=False)
      
      # cats = ["ambiguous", "short", "long", "disambiguating_pro", "disambiguating_anti"]
-     cats = ["ambiguous", "disambiguating_pro", "disambiguating_anti"]
+     cats = ["ambiguous", "ambiguous_short", "ambiguous_long", "disambiguating_pro", "disambiguating_anti"]
      for thewoman in [True, False]:
           # Compute bias scores for ambiguous, short, long,
           # disambiguating_pro, disambiguating_anti
