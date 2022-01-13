@@ -381,18 +381,23 @@ def fill_lex_div(df: pd.DataFrame, env, name_swap):
                          print("lex: ", md)
                          row_copy = row.copy()
                          for col_name in ["Ambiguous_Context",
-                                        "Context_append_short",
-                                        "Context_append_long",
-                                        "Disambiguating_Context",
-                                        "Disambiguating_Context_stereotype",
-                                        "Disambiguating_Context_anti_stereotype",
-                                        "Statement_negative",
-                                        "Statement_non_negative",
-                                        "Statement_negative_m",
-                                        "Statement_non_negative_m"]:
+                                         "Context_append_short",
+                                         "Context_append_long"]:
+                              r_ = row_copy[col_name]
+                              row_copy[col_name] = env.from_string(r_).render(**md)
+                         
+                         # for these columns, we can't swap names.
+                         md = {"NAME2": target, "NAME1": non_target}
+                         for col_name in ["Disambiguating_Context_stereotype",
+                                          "Disambiguating_Context_anti_stereotype",
+                                          "Statement_negative",
+                                          "Statement_non_negative",
+                                          "Statement_negative_m",
+                                          "Statement_non_negative_m"]:
                               r_ = row_copy[col_name]
                               row_copy[col_name] = env.from_string(r_).render(**md)
                          new_df.loc[len(new_df)] = row_copy
+
      return new_df
 
 if __name__ == "__main__":
