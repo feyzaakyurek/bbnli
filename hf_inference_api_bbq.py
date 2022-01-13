@@ -351,7 +351,7 @@ def run_inference(df):
      
      return newdf
 
-def fill_lex_div(df: pd.DataFrame, env):
+def fill_lex_div(df: pd.DataFrame, env, name_swap):
      new_df = pd.DataFrame(columns=df.columns)
      for _, row in df.iterrows():
           # Lexical diversity for WORDX
@@ -372,7 +372,10 @@ def fill_lex_div(df: pd.DataFrame, env):
           for target in targets:
                for non_target in non_targets:
                     for var in [variables[0]]: # WARNING, considering only one pair of lex div items.
-                         md = {"NAME2": non_target, "NAME1": target}
+                         if name_swap:
+                              md = {"NAME2": non_target, "NAME1": target}
+                         else:
+                              md = {"NAME2": target, "NAME1": non_target}
                          var1 = "" if len(var)==1 else var[1]
                          md.update({"WORD1":var[0], "WORD2":var1})
                          print("lex: ", md)
@@ -397,18 +400,20 @@ if __name__ == "__main__":
      parser.add_argument("--csv_name", type=str) # "BBQ/templates/new_templates - Religion.csv"
      parser.add_argument("--domain", type=str) # religion
      parser.add_argument("--model", type=str) # t0
+     parser.add_argument("--swap_names", action='store_true') # name1 = non-target
      opt = parser.parse_args()
      domain = opt.domain
      model = opt.model
 
      # Read the file
      pth = opt.csv_name 
-     os.makedirs(f"outputs/BBQ/{domain}/{model}", exist_ok=True)
-     inference_pth = f"outputs/BBQ/{domain}/{model}/new_templates - {domain}_inference.csv"
-     results_pth = f"outputs/BBQ/{domain}/{model}/{domain} - results.csv"
-     results_csv_a = f"outputs/BBQ/{domain}/{model}/{domain} - results - amb.csv"
-     results_pdf_d_bias = f"outputs/BBQ/{domain}/{model}/{domain} - results - disamb - bias.png"
-     results_pdf_d_acc = f"outputs/BBQ/{domain}/{model}/{domain} - results - disamb - acc.png"
+     bbq_path = "BBQ_nameswap" if opt.swap_names else "BBQ"
+     os.makedirs(f"outputs/{bbq_path}/{domain}/{model}", exist_ok=True)
+     inference_pth = f"outputs/{bbq_path}/{domain}/{model}/new_templates - {domain}_inference.csv"
+     results_pth = f"outputs/{bbq_path}/{domain}/{model}/{domain} - results.csv"
+     results_csv_a = f"outputs/{bbq_path}/{domain}/{model}/{domain} - results - amb.csv"
+     results_pdf_d_bias = f"outputs/{bbq_path}/{domain}/{model}/{domain} - results - disamb - bias.png"
+     results_pdf_d_acc = f"outputs/{bbq_path}/{domain}/{model}/{domain} - results - disamb - acc.png"
      df = pd.read_csv(pth, dtype=str)
 
      # Jinja env.
@@ -416,7 +421,7 @@ if __name__ == "__main__":
      env = nativetypes.NativeEnvironment()
 
      # Fill in lexical diversity options.
-     df = fill_lex_div(df, env)
+     df = fill_lex_div(df, env, opt.swap_names)
 
      # If predictions are already saved, skip inference.
      skip_inference = False
