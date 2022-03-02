@@ -1,10 +1,12 @@
 import json
 import pandas as pd
-from transformers import pipeline, GPT2LMHeadModel, GPT2Tokenizer
+# from transformers import pipeline #, GPT2LMHeadModel, GPT2Tokenizer
 import argparse
 import os
 import openai
-from pretrained_model_list import MODEL_PATH_LIST
+# from pretrained_model_list import MODEL_PATH_LIST
+import promptsource.templates
+from tqdm import tqdm
 
 
 def clean_up_tokenization(out_string: str) -> str:
@@ -33,6 +35,8 @@ def clean_up_tokenization(out_string: str) -> str:
     return out_string
 
 def load_prompts(opt):
+    if opt.prompt_set == "nlibias":
+        return load_bbnli(opt)
     pth = os.path.join("data", opt.prompt_set, "prompts", opt.prompt_domain+"_prompt.json")
     prompts = []
     with open(pth) as f:
@@ -46,6 +50,23 @@ def load_prompts(opt):
             for prompt in prompt_l:
                 prompts_df.loc[len(prompts_df)] = [name, group, prompt]
     return prompts_df
+
+def load_bbnli(opt):
+    # pth = os.path.join("outputs", "nlibias", opt.prompt_domain, opt.prompt_subtopic+".csv")
+    nli_temp = "GPT-3 style"
+    template_collection = promptsource.templates.TemplateCollection()
+    temp = template_collection.get_dataset("anli", None)[nli_temp]
+    def create_gpt3_prompt(row):
+        m = {"premise": row["premise"],
+             "hypothesis": row["hypothesis"]}
+        inp = env.from_string(temp).render(**m)
+        return inp
+    pth = "data/nli/validation_secret.csv"
+    prompts_df = pd.read_csv(pth)
+    prompts_df["Prompt"] = prompts_df.apply(lambda x: create_gpt3_prompt(x), axis=1)
+    prompts_df.rename(columns={"Domain":"Group"})
+    return prompts_df
+
 
 def get_generations_gpt2(prompts_df, opt):
     model = GPT2LMHeadModel.from_pretrained(opt.model_path)
@@ -81,11 +102,11 @@ def get_generations_gpt3(prompts_df, opt):
 
     openai.api_key = [el for el in open("openai_key", 'r')][0]
     gen_df = pd.DataFrame(columns = ["Name", "Group", "Prompt", "Generation"])
-
-    for chunk in list(chunks(prompts_df, opt.batch_size)):
+    chunks_ls = list(chunks(prompts_df, opt.batch_size))
+    for chunk in tqdm(chunks_ls, total=len(chunks_ls)):
         # create a completion
         lst = [el.strip(" ") for el in chunk.Prompt.to_list()]
-        completion = openai.Completion.create(engine="curie",
+        completion = openai.Completion.create(engine="text-curie-001",
                                               prompt=lst,
                                               max_tokens=opt.max_length,
                                               top_p=0.9,
@@ -120,6 +141,10 @@ if __name__ == "__main__":
 
     if not opt.do_sample:
         assert opt.num_gens == 1
+
+    # Jinja env.
+    global env
+    env = nativetypes.NativeEnvironment()
         
     prompts_df = load_prompts(opt)
     if opt.model_name == "gpt2":
@@ -128,5 +153,5 @@ if __name__ == "__main__":
         gen_df = get_generations_gpt3(prompts_df, opt)
     else:
         raise ValueError(f"{opt.model_name} is not known.")
-    pth = os.path.join(opt.save_path, "gens.csv")
+    pth = os.path.join(opt.save_path, opt.prompt_set+"_gens.csv")
     gen_df.to_csv(pth)
