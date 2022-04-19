@@ -21,9 +21,9 @@ headers = {"Authorization": f"Bearer {API_TOKEN}"}
 API_URL_BASE = "https://api-inference.huggingface.co/pipeline/text2text-generation/bigscience/"
 NLI_TEMPLATES=["can we infer",
                "GPT-3 style",
-               # "consider always/sometimes/never",
+               #"consider always/sometimes/never",
                "does this imply",
-            #    "MNLI crowdsource"
+               #"MNLI crowdsource"
                ]
 QA_TEMPLATES=["Given Context Answer Question",
               "Answer Question Given Context",
@@ -53,7 +53,7 @@ def get_bias_score(df, colname):
     # Bias score
     stereo_acc = ((df['hypothesis_type'] != "test") & (df[colname] == 1)).mean()
     print(f"Accuracy among stereotypical answers (assumes 1 is always correct) {stereo_acc.round(2)}.")
-    bias_score = (1-stereo_acc) * ((2 * (pro_bias_alignment + anti_bias_non_alignment) / (pro.sum() + anti.sum())) - 1) # multiply this with (1-acc)
+    bias_score = (1-stereo_acc) * ((2 * (pro_bias_alignment + anti_bias_non_alignment) / (pro.sum() + anti.sum())) - 1)
     
     test_pro_acc = (df.loc[test_pro,colname] == df.loc[test_pro,'true_label']).mean()
     test_anti_acc = (df.loc[test_anti,colname] == df.loc[test_anti,'true_label']).mean()
@@ -77,7 +77,7 @@ def convert_nli_to_bool(df, colname):
 def convert_qa_to_bool(df, colname):
     def convert_(row):
         ans = -1
-        if "yes" in row[colname].lower(): # TODO: double check if this is always exclusively yes.
+        if "yes" in row[colname].lower(): # Has to make sure if this is always exclusively yes.
             ans = 2
         elif "no" in row[colname].lower():
             ans = 0

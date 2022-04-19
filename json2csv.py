@@ -11,7 +11,7 @@ import ipdb
 def json2csv(filename, domain, overwrite=False):
     # Exit if file exists.
     _, tail = os.path.split(filename)
-    save_pth = os.path.join(f"outputs/nlibias/{domain}",
+    save_pth = os.path.join(f"outputs/bbnli/{domain}",
                             tail.replace("json", "csv"))
     if os.path.exists(save_pth):
         print(f"{save_pth} already exits.")
