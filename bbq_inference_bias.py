@@ -340,7 +340,7 @@ def fill_lex_div(df: pd.DataFrame, env):
 
 if __name__ == "__main__":
      parser = argparse.ArgumentParser('argument for training')
-     parser.add_argument("--csv_name", type=str) # "BBQ/templates/new_templates - Religion.csv"
+     parser.add_argument("--csv_name", type=str) # "data/bbq/templates/new_templates - Religion.csv"
      parser.add_argument("--domain", type=str) # religion
      parser.add_argument("--model", type=str) # t0
      opt = parser.parse_args()
