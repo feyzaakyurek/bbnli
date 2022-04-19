@@ -6,7 +6,6 @@ import sys
 import itertools
 from collections import OrderedDict
 from tqdm import tqdm
-import ipdb
 
 def json2csv(filename, domain, overwrite=False):
     # Exit if file exists.
@@ -50,7 +49,7 @@ def json2csv(filename, domain, overwrite=False):
     keys = list(data.keys())
     
     print("Iterating over premises...")
-    for ind,pre in enumerate(inp['premise']):
+    for ind,pre in enumerate(tqdm(inp['premise'], total=len(inp['premise']))):
         for datum in variables:
             m = dict(zip(keys, datum))
             m["GROUP1"] = group1
