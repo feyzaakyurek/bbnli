@@ -7,9 +7,9 @@ import pickle
 import glob
 import os
 
-overwrite_csv = False
-skip_inference = False
-num_gens = 5
+overwrite_csv = False # Skip creating csv files from json docs (only works if you already have the csv files). 
+skip_inference = False # Skip sampling completions from the model (only works if you already have completions).
+num_gens = 1 # Number of completions to sample from the model. In the paper we use 5.
 model = "t0pp"
 
 if __name__ == "__main__":
