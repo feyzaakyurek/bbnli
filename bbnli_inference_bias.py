@@ -1,11 +1,8 @@
-from huggingface_hub.inference_api import InferenceApi
 from jinja2 import nativetypes
 from random import sample
 import promptsource.templates
-import ipdb
 import pandas as pd
 from tqdm import tqdm
-from BBQ.utils import *
 import argparse
 import json
 import requests

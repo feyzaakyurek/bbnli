@@ -1,4 +1,4 @@
-from hf_inference_api_nlibias import get_bias_scores
+from bbnli_inference_bias import get_bias_scores
 import matplotlib.pyplot as plt
 from json2csv import json2csv
 import seaborn as sns
@@ -8,21 +8,21 @@ import glob
 import os
 
 overwrite_csv = False
-skip_inference = True
+skip_inference = False
 num_gens = 5
 model = "t0pp"
 
 if __name__ == "__main__":
 
     for domain in ["religion", "gender", "race"]:
+        # Create the outputs directory
+        os.makedirs(f"outputs/bbnli/{domain}", exist_ok=True)
+
         # Populate csv files using json topics.
         files = glob.glob(f'data/bbnli/{domain}/*.json')
         for file in files:
             print(f"Creating csv from json: {file}")
             json2csv(file, domain, overwrite=overwrite_csv)
-
-        # Create the outputs directory
-        os.makedirs(f"outputs/bbnli/{domain}", exist_ok=True)
 
         # Load the big inference dict for the domain
         bigdqa, bigdnli = {}, {}
