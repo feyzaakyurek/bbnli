@@ -2,7 +2,7 @@
 
 Code repository for the following paper where we test whether zero-shot generalization capacity of T0 models into novel language tasks results in amplified social biases.
 
-On Measuring Social Biases in Prompt-Based Multi-Task Learning, Afra Feyza Akyürek, Sejin Paik, Muhammed Yusuf Kocyigit, Seda Akbiyik, Şerife Leman Runyun, Derry Tanti Wijaya. Findings of NAACL 2022. [[Link]](https://openreview.net/forum?id=SAgxG-jZHZq)
+On Measuring Social Biases in Prompt-Based Multi-Task Learning, Afra Feyza Akyürek, Sejin Paik, Muhammed Yusuf Kocyigit, Seda Akbiyik, Şerife Leman Runyun, Derry Tanti Wijaya. Findings of NAACL 2022. [[Link]](https://openreview.net/forum?id=aRUaZM9L7jM)
 
 ![](bias_teaser.png)
 
