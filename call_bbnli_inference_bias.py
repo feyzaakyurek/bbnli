@@ -7,10 +7,10 @@ import pickle
 import glob
 import os
 
-overwrite_csv = False # Skip creating csv files from json docs (only works if you already have the csv files). 
+overwrite_csv = True # Skip creating csv files from json docs (only works if you already have the csv files). 
 skip_inference = False # Skip sampling completions from the model (only works if you already have completions).
-num_gens = 1 # Number of completions to sample from the model. In the paper we use 5.
-model = "t0pp"
+num_gens = 5 # Number of completions to sample from the model. In the paper we use 5.
+model = "t0"
 
 if __name__ == "__main__":
 
@@ -68,11 +68,14 @@ if __name__ == "__main__":
     hh = hh.rename(columns={"level_0":"Bias Subtopic"})
     hh = (hh.pivot(index=["Domain", "Bias Subtopic"], values="BiasScore", columns="Task") * 100).round(2)
 
+    # Saving results to csv file.
+    hh.to_csv(f"outputs/bbnli/new_heatmap_numgens_{num_gens}_{model}.csv")
+
+    # Saving the figure.
     sns.set(rc={'figure.figsize':(2.7,10.27)})
     ax = sns.heatmap(hh.sort_values(["Domain", "QA"]), cmap="crest", annot=True)
-
     for i in range(19):
-        if i == 6 or i == 11:
+        if i == 5 or i == 10:
             ax.axhline(i, color='white', lw=5)
     plt.show()
     ax.get_figure().savefig(f"outputs/bbnli/new_heatmap_numgens_{num_gens}_{model}.pdf",  bbox_inches="tight") 
